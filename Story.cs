@@ -22,7 +22,6 @@ namespace AccessibleGridGame
             this.Text = text;
             this.AccessibleName = text;
             this.AccessibilityNotifyClients(AccessibleEvents.NameChange, -1);
-            this.AccessibilityNotifyClients(AccessibleEvents.LiveRegionChanged, -1);
         }
     }
 
@@ -31,10 +30,11 @@ namespace AccessibleGridGame
         // 【靜態記錄表】只要遊戲不關閉重開，播放過的劇情段落名稱都會被記在這裡
         private static HashSet<string> playedChapters = new HashSet<string>();
 
-        private List<string> currentLines = new List<string>();
+        private List<StoryEntry> currentEntries = new List<StoryEntry>();
         private int currentIndex = 0;
         private string chapterName;
         private StoryLiveLabel lblDialogue;
+        private TeleportRequest? pendingTeleport;
 
         public StoryForm(string targetChapter)
         {
@@ -55,6 +55,9 @@ namespace AccessibleGridGame
             lblDialogue.Size = new Size(440, 130);
             lblDialogue.Font = new Font("微軟正黑體", 13, FontStyle.Bold);
             lblDialogue.TabIndex = 0;
+            lblDialogue.TabStop = true;
+            lblDialogue.AccessibleName = "劇情對話";
+            lblDialogue.AccessibleDescription = "顯示目前劇情句子，按 Enter 換下一句，按 R 重聽";
 
             // 3. 底部按鍵操作提示
             Label lblHint = new Label();
@@ -99,14 +102,36 @@ namespace AccessibleGridGame
             try
             {
                 string jsonContent = File.ReadAllText(jsonPath);
-                var storyData = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(jsonContent);
+                using var document = JsonDocument.Parse(jsonContent);
 
-                if (storyData != null && storyData.ContainsKey(chapterName) && storyData[chapterName].Count > 0)
+                if (document.RootElement.TryGetProperty(chapterName, out var chapterElement)
+                    && chapterElement.ValueKind == JsonValueKind.Array)
                 {
-                    currentLines = storyData[chapterName];
-                    currentIndex = 0;
-                    // 顯示並朗讀第一句
-                    lblDialogue.Speak(currentLines[currentIndex]);
+                    currentEntries = TeleportEngine.ParseEntries(chapterElement);
+
+                    // 從結尾找出傳送指令（可在章節最後加入 { "teleport": {...} }）
+                    pendingTeleport = currentEntries.FindLast(e => e.IsTeleport)?.Teleport;
+
+                    // 只保留文字句子用來播放
+                    currentEntries = currentEntries.FindAll(e => !e.IsTeleport);
+
+                    if (currentEntries.Count > 0)
+                    {
+                        currentIndex = 0;
+                        lblDialogue.Speak(currentEntries[0].Text ?? "");
+                    }
+                    else if (pendingTeleport != null)
+                    {
+                        // 章節只有傳送指令、沒有文字：直接傳送
+                        ExecuteTeleport();
+                    }
+                    else
+                    {
+                        // 章節尚未撰寫（例如先留空佔位的「第二段」）：安全關閉，不當作錯誤
+                        lblDialogue.Speak($"「{chapterName}」劇情尚未撰寫。");
+                        MessageBox.Show($"「{chapterName}」劇情尚未撰寫，敬請期待！", "劇情提示");
+                        this.Close();
+                    }
                 }
                 else
                 {
@@ -131,27 +156,65 @@ namespace AccessibleGridGame
                 currentIndex++;
 
                 // 檢查是否還有下一句
-                if (currentIndex < currentLines.Count)
+                if (currentIndex < currentEntries.Count)
                 {
-                    lblDialogue.Speak(currentLines[currentIndex]);
+                    lblDialogue.Speak(currentEntries[currentIndex].Text ?? "");
                 }
                 else
                 {
-                    // 本段劇情全部結束：加入「已播放名單」，並關閉劇情視窗
+                    // 本段劇情全部結束：加入「已播放名單」
                     playedChapters.Add(chapterName);
                     lblDialogue.Speak("本段劇情結束。");
-                    MessageBox.Show($"「{chapterName}」劇情已結束！", "章節完成");
-                    this.Close();
+
+                    if (pendingTeleport != null)
+                    {
+                        // 有傳送指令：開啟地圖並傳送過去
+                        ExecuteTeleport();
+                    }
+                    else
+                    {
+                        MessageBox.Show($"「{chapterName}」劇情已結束！", "章節完成");
+                        this.Close();
+                    }
                 }
             }
             else if (e.KeyCode == Keys.R)
             {
                 // 貼心無障礙功能：按 R 鍵可重聽當前這一句
-                if (currentIndex < currentLines.Count)
+                if (currentIndex < currentEntries.Count)
                 {
-                    lblDialogue.Speak(currentLines[currentIndex]);
+                    lblDialogue.Speak(currentEntries[currentIndex].Text ?? "");
                 }
             }
+        }
+
+        private void ExecuteTeleport()
+        {
+            if (pendingTeleport == null) return;
+
+            var targetMap = TeleportEngine.FindMap(pendingTeleport.Map);
+            if (targetMap == null)
+            {
+                MessageBox.Show($"找不到傳送目標地圖「{pendingTeleport.Map}」。", "傳送失敗");
+                this.Close();
+                return;
+            }
+
+            if (!TeleportEngine.IsValidDestination(targetMap, pendingTeleport.X, pendingTeleport.Y))
+            {
+                MessageBox.Show($"傳送座標無效：{pendingTeleport.Map} ({pendingTeleport.X},{pendingTeleport.Y})。", "傳送失敗");
+                this.Close();
+                return;
+            }
+
+            GameForm game = new GameForm();
+            game.EnterMap(pendingTeleport.Map, pendingTeleport.X, pendingTeleport.Y, pendingTeleport.Announcement);
+            this.Hide();
+            game.FormClosed += (s, args) =>
+            {
+                this.Close();
+            };
+            game.Show();
         }
     }
 }
