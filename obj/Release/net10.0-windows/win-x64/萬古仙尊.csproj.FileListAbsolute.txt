@@ -282,3 +282,5 @@ D:\Eternal-Immortal-Venerable\obj\Release\net10.0-windows\win-x64\refint\萬古�
 D:\Eternal-Immortal-Venerable\obj\Release\net10.0-windows\win-x64\萬古仙尊.pdb
 D:\Eternal-Immortal-Venerable\obj\Release\net10.0-windows\win-x64\萬古仙尊.genruntimeconfig.cache
 D:\Eternal-Immortal-Venerable\obj\Release\net10.0-windows\win-x64\ref\萬古仙尊.dll
+D:\Eternal-Immortal-Venerable\bin\Release\net10.0-windows\win-x64\nvdaControllerClient64.dll
+D:\Eternal-Immortal-Venerable\bin\Release\net10.0-windows\win-x64\prism.dll

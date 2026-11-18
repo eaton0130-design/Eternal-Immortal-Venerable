@@ -4,19 +4,21 @@ using System.Windows.Forms;
 
 namespace AccessibleGridGame
 {
-    public class MainMenuForm : Form
+    /// <summary>
+    /// 主選單畫面。它不是視窗，而是被嵌在唯一 Form 裡的 UserControl。
+    /// </summary>
+    public class MenuView : UserControl
     {
-        private Button btnStart;
-        private Button btnExit;
+        private readonly Button btnStart;
+        private readonly Button btnExit;
 
-        public MainMenuForm()
+        public event Action? StartRequested;
+        public event Action? ExitRequested;
+
+        public MenuView()
         {
-            // 1. 主選單視窗設定
-            this.Text = "八荒大陸 - 遊戲主選單";
-            this.Size = new Size(360, 260);
-            this.StartPosition = FormStartPosition.CenterScreen;
+            this.BackColor = SystemColors.Control;
 
-            // 2. 遊戲標題標籤
             Label lblTitle = new Label();
             lblTitle.Text = "八荒大陸";
             lblTitle.Font = new Font("微軟正黑體", 18, FontStyle.Bold);
@@ -24,51 +26,170 @@ namespace AccessibleGridGame
             lblTitle.AutoSize = true;
             lblTitle.TabIndex = 0;
 
-            // 3. 建立「開始遊戲」按鈕（按上下方向鍵或 Tab 可切換，也可按 Alt+S）
             btnStart = new Button();
             btnStart.Text = "開始遊戲(&S)";
             btnStart.Location = new Point(80, 85);
             btnStart.Size = new Size(180, 42);
             btnStart.Font = new Font("微軟正黑體", 12);
-            btnStart.TabIndex = 1; // 焦點第 1 順位
+            btnStart.TabIndex = 1;
             btnStart.AccessibleName = "開始遊戲";
             btnStart.AccessibleDescription = "按下 Enter 開始播放第一段劇情";
-            btnStart.Click += BtnStart_Click;
+            btnStart.GotFocus += BtnStart_GotFocus;
+            btnStart.Click += (s, e) => StartRequested?.Invoke();
 
-            // 4. 建立「結束遊戲」按鈕（按上下方向鍵或 Tab 可切換，也可按 Alt+Q）
             btnExit = new Button();
             btnExit.Text = "結束遊戲(&Q)";
             btnExit.Location = new Point(80, 145);
             btnExit.Size = new Size(180, 42);
             btnExit.Font = new Font("微軟正黑體", 12);
-            btnExit.TabIndex = 2; // 焦點第 2 順位
+            btnExit.TabIndex = 2;
             btnExit.AccessibleName = "結束遊戲";
             btnExit.AccessibleDescription = "按下 Enter 關閉並離開遊戲";
-            btnExit.Click += (s, e) => Application.Exit();
+            btnExit.GotFocus += BtnExit_GotFocus;
+            btnExit.Click += (s, e) =>
+            {
+                ScreenReader.Speak("結束遊戲。");
+                ExitRequested?.Invoke();
+            };
 
-            // 5. 將元件加入視窗
             this.Controls.Add(lblTitle);
             this.Controls.Add(btnStart);
             this.Controls.Add(btnExit);
-
-            // 視窗開啟時，確保焦點預設停在「開始遊戲」按鈕上
-            this.Shown += (s, e) => btnStart.Focus();
         }
 
-        private void BtnStart_Click(object? sender, EventArgs e)
+        public void FocusStart()
         {
-            // 隱藏主選單，開啟劇情視窗並指定播放「第一段」
-            this.Hide();
-            StoryForm story = new StoryForm("第一段");
+            btnStart.Focus();
+        }
 
-            // 當劇情播放完畢（或因為已經播過而關閉）時，自動重新顯示主選單並把焦點放回開始按鈕
-            story.FormClosed += (s, args) =>
+        /// <summary>由唯一的 Form 統一轉送鍵盤事件。</summary>
+        public void HandleKey(KeyEventArgs e)
+        {
+            if (e.KeyCode != Keys.Up && e.KeyCode != Keys.Down)
             {
-                this.Show();
-                btnStart.Focus();
-            };
+                return;
+            }
 
-            story.Show();
+            // 只有兩個按鈕，上下鍵互換即可；Enter 留給按鈕自己觸發 Click。
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            Button target = btnStart.Focused ? btnExit : btnStart;
+            target.Focus();
+        }
+
+        private void BtnStart_GotFocus(object? sender, EventArgs e)
+        {
+            ScreenReader.Speak("開始遊戲。按下 Enter 開始播放第一段劇情");
+        }
+
+        private void BtnExit_GotFocus(object? sender, EventArgs e)
+        {
+            ScreenReader.Speak("結束遊戲。按下 Enter 關閉並離開遊戲");
+        }
+    }
+
+    /// <summary>
+    /// 唯一的視窗：主選單、劇情、地圖都在這裡面無縫切換，不另開任何視窗。
+    /// 標題固定為「八荒大陸」，不透露目前是哪一種畫面。
+    /// </summary>
+    public class MainMenuForm : Form
+    {
+        private readonly MenuView menuView;
+        private readonly StoryView storyView;
+        private readonly MapView mapView;
+        private UserControl? currentView;
+
+        // 劇情結束後要回主選單還是回地圖
+        private bool storyReturnToMap;
+
+        public MainMenuForm()
+        {
+            this.Text = "八荒大陸";
+            this.Size = new Size(560, 300);
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.KeyPreview = true;
+            this.KeyDown += MainForm_KeyDown;
+
+            menuView = new MenuView();
+            storyView = new StoryView();
+            mapView = new MapView();
+
+            menuView.StartRequested += () => StartStory("第一段", false);
+            menuView.ExitRequested += () => Application.Exit();
+
+            storyView.Completed += OnStoryCompleted;
+
+            mapView.ExitRequested += ShowMenu;
+            mapView.StoryRequested += chapter => StartStory(chapter, true);
+
+            foreach (UserControl view in new UserControl[] { menuView, storyView, mapView })
+            {
+                view.Dock = DockStyle.Fill;
+                view.Visible = false;
+                this.Controls.Add(view);
+            }
+
+            ShowMenu();
+        }
+
+        private void MainForm_KeyDown(object? sender, KeyEventArgs e)
+        {
+            // 只有目前畫面會收到鍵盤，所以 Player 感覺不到畫面切換。
+            if (currentView == menuView)
+            {
+                menuView.HandleKey(e);
+            }
+            else if (currentView == storyView)
+            {
+                storyView.HandleKey(e);
+            }
+            else if (currentView == mapView)
+            {
+                mapView.HandleKey(e);
+            }
+        }
+
+        private void SwitchTo(UserControl view)
+        {
+            menuView.Visible = view == menuView;
+            storyView.Visible = view == storyView;
+            mapView.Visible = view == mapView;
+            currentView = view;
+            view.BringToFront();
+        }
+
+        private void ShowMenu()
+        {
+            SwitchTo(menuView);
+            menuView.FocusStart();
+        }
+
+        private void StartStory(string chapter, bool returnToMap)
+        {
+            storyReturnToMap = returnToMap;
+            SwitchTo(storyView);
+            storyView.Play(chapter);
+        }
+
+        private void OnStoryCompleted(TeleportRequest? teleport)
+        {
+            if (teleport != null)
+            {
+                // 劇情尾端的傳送指令：直接把玩家放進指定地圖
+                mapView.EnterMap(teleport.Map, teleport.X, teleport.Y, teleport.Announcement);
+                SwitchTo(mapView);
+                mapView.Activate();
+            }
+            else if (storyReturnToMap)
+            {
+                // 從地圖內的事件進入劇情，播完就回原來的地圖
+                SwitchTo(mapView);
+                mapView.Activate();
+            }
+            else
+            {
+                ShowMenu();
+            }
         }
     }
 
@@ -79,7 +200,16 @@ namespace AccessibleGridGame
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainMenuForm());
+
+            ScreenReader.Initialize();
+            try
+            {
+                Application.Run(new MainMenuForm());
+            }
+            finally
+            {
+                ScreenReader.Shutdown();
+            }
         }
     }
 }

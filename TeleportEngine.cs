@@ -27,7 +27,7 @@ namespace AccessibleGridGame
         public List<GameMap> Maps { get; set; } = new List<GameMap>();
     }
 
-    // 傳送引擎：負責把 story.json 的傳送物件翻成 GameForm 看得懂的目標
+    // 傳送引擎：負責把 story.json 的傳送物件翻成 MapView 看得懂的目標
     // 以后只要在某章節最後加一筆 { "teleport": { "map": "...", "x": 0, "y": 0 } }，不用改任何 C# 程式碼
     public static class TeleportEngine
     {

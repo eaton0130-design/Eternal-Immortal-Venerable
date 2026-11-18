@@ -1,4 +1,6 @@
 D:\Eternal-Immortal-Venerable\bin\Release\net10.0-windows\win-x64\publish\萬古仙尊.pdb
 D:\Eternal-Immortal-Venerable\bin\Release\net10.0-windows\win-x64\publish\map.json
+D:\Eternal-Immortal-Venerable\bin\Release\net10.0-windows\win-x64\publish\nvdaControllerClient64.dll
+D:\Eternal-Immortal-Venerable\bin\Release\net10.0-windows\win-x64\publish\prism.dll
 D:\Eternal-Immortal-Venerable\bin\Release\net10.0-windows\win-x64\publish\story.json
 D:\Eternal-Immortal-Venerable\bin\Release\net10.0-windows\win-x64\publish\萬古仙尊.exe
