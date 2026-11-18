@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("萬古仙尊")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+fd598ea72712d901e4cb54641f55dffc9e574ce5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+98658d4af5e7f98619baa53e21dc05f4ed0b40a6")]
 [assembly: System.Reflection.AssemblyProductAttribute("萬古仙尊")]
 [assembly: System.Reflection.AssemblyTitleAttribute("萬古仙尊")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
