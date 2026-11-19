@@ -4,12 +4,14 @@ using System.Text.Json;
 
 namespace AccessibleGridGame
 {
-    // 劇情章節的內容項目：可能是純文字句子，也可能是傳送指令
+    // 劇情章節的內容項目：可能是純文字句子、附配音的句子，或傳送指令
     public class StoryEntry
     {
         public string? Text { get; set; }
+        public string? Voice { get; set; }
         public TeleportRequest? Teleport { get; set; }
         public bool IsTeleport => Teleport != null;
+        public bool HasVoice => !string.IsNullOrWhiteSpace(Voice);
     }
 
     // 來自 story.json 的傳送指令：{ "teleport": { "map": "神秘空間", "x": 2, "y": 2, "announcement": "..." } }
@@ -49,12 +51,32 @@ namespace AccessibleGridGame
                 {
                     entries.Add(new StoryEntry { Text = item.GetString() ?? "" });
                 }
-                else if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("teleport", out var teleportElement))
+                else if (item.ValueKind == JsonValueKind.Object)
                 {
-                    var teleport = teleportElement.Deserialize<TeleportRequest>(JsonOptions);
-                    if (teleport != null)
+                    if (item.TryGetProperty("teleport", out var teleportElement))
                     {
-                        entries.Add(new StoryEntry { Teleport = teleport });
+                        var teleport = teleportElement.Deserialize<TeleportRequest>(JsonOptions);
+                        if (teleport != null)
+                        {
+                            entries.Add(new StoryEntry { Teleport = teleport });
+                        }
+                    }
+                    else if (item.TryGetProperty("text", out var textElement)
+                             && textElement.ValueKind == JsonValueKind.String)
+                    {
+                        // 附配音的句子：{ "text": "...", "voice": "sounds/voice/01_1.wav" }
+                        string? voice = null;
+                        if (item.TryGetProperty("voice", out var voiceElement)
+                            && voiceElement.ValueKind == JsonValueKind.String)
+                        {
+                            voice = voiceElement.GetString();
+                        }
+
+                        entries.Add(new StoryEntry
+                        {
+                            Text = textElement.GetString() ?? "",
+                            Voice = voice
+                        });
                     }
                 }
             }

@@ -64,6 +64,7 @@ namespace AccessibleGridGame
 
         public event Action? ExitRequested;
         public event Action<string>? StoryRequested;
+        public event Action? MenuRequested;
 
         public MapView()
         {
@@ -81,13 +82,14 @@ namespace AccessibleGridGame
             lblStatus.GotFocus += LblStatus_GotFocus;
 
             lblHint = new Label();
-            lblHint.Text = "操作提示：W/A/S/D 或方向鍵移動，C 鍵查詢座標，Enter/G 鍵觸發劇情，Esc 鍵返回";
+            lblHint.Text = "操作提示：W/A/S/D 或方向鍵移動，C 鍵查詢座標，Enter/G 鍵觸發劇情，F1 鍵開啟選單，Esc 鍵返回";
             lblHint.Location = new Point(30, 180);
             lblHint.AutoSize = true;
+            lblHint.MaximumSize = new Size(500, 0);
             lblHint.Font = new Font("微軟正黑體", 10);
             lblHint.ForeColor = Color.DimGray;
             lblHint.AccessibleName = "地圖操作提示";
-            lblHint.AccessibleDescription = "WASD 或方向鍵移動，C 查詢座標，Enter 或 G 觸發劇情，Esc 返回";
+            lblHint.AccessibleDescription = "WASD 或方向鍵移動，C 查詢座標，Enter 或 G 觸發劇情，F1 開啟選單，Esc 返回";
 
             this.Controls.Add(lblStatus);
             this.Controls.Add(lblHint);
@@ -225,6 +227,15 @@ namespace AccessibleGridGame
         /// <summary>由唯一的 Form 統一轉送鍵盤事件。</summary>
         public void HandleKey(KeyEventArgs e)
         {
+            // F1 開啟遊戲選單；放在地圖檢查之前，連地圖載入失敗都能查看角色資訊
+            if (e.KeyCode == Keys.F1)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                MenuRequested?.Invoke();
+                return;
+            }
+
             if (map == null)
             {
                 return;

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -89,7 +90,7 @@ namespace AccessibleGridGame
     }
 
     /// <summary>
-    /// 唯一的視窗：主選單、劇情、地圖都在這裡面無縫切換，不另開任何視窗。
+    /// 唯一的視窗：主選單、劇情、地圖、遊戲選單、角色資訊都在這裡面無縫切換，不另開任何視窗。
     /// 標題固定為「八荒大陸」，不透露目前是哪一種畫面。
     /// </summary>
     public class MainMenuForm : Form
@@ -97,6 +98,9 @@ namespace AccessibleGridGame
         private readonly MenuView menuView;
         private readonly StoryView storyView;
         private readonly MapView mapView;
+        private readonly GameMenuView gameMenuView;
+        private readonly CharacterView characterView;
+        private readonly List<UserControl> allViews;
         private UserControl? currentView;
 
         // 劇情結束後要回主選單還是回地圖
@@ -113,6 +117,10 @@ namespace AccessibleGridGame
             menuView = new MenuView();
             storyView = new StoryView();
             mapView = new MapView();
+            gameMenuView = new GameMenuView();
+            characterView = new CharacterView();
+
+            allViews = new List<UserControl> { menuView, storyView, mapView, gameMenuView, characterView };
 
             menuView.StartRequested += () => StartStory("第一段", false);
             menuView.ExitRequested += () => Application.Exit();
@@ -121,8 +129,13 @@ namespace AccessibleGridGame
 
             mapView.ExitRequested += ShowMenu;
             mapView.StoryRequested += chapter => StartStory(chapter, true);
+            mapView.MenuRequested += ShowGameMenu;
 
-            foreach (UserControl view in new UserControl[] { menuView, storyView, mapView })
+            gameMenuView.ItemSelected += OnGameMenuItemSelected;
+            gameMenuView.BackRequested += ReturnToMap;
+            characterView.BackRequested += ShowGameMenu;
+
+            foreach (UserControl view in allViews)
             {
                 view.Dock = DockStyle.Fill;
                 view.Visible = false;
@@ -147,13 +160,23 @@ namespace AccessibleGridGame
             {
                 mapView.HandleKey(e);
             }
+            else if (currentView == gameMenuView)
+            {
+                gameMenuView.HandleKey(e);
+            }
+            else if (currentView == characterView)
+            {
+                characterView.HandleKey(e);
+            }
         }
 
         private void SwitchTo(UserControl view)
         {
-            menuView.Visible = view == menuView;
-            storyView.Visible = view == storyView;
-            mapView.Visible = view == mapView;
+            foreach (UserControl item in allViews)
+            {
+                item.Visible = item == view;
+            }
+
             currentView = view;
             view.BringToFront();
         }
@@ -190,6 +213,32 @@ namespace AccessibleGridGame
             {
                 ShowMenu();
             }
+        }
+
+        private void ShowGameMenu()
+        {
+            SwitchTo(gameMenuView);
+            gameMenuView.FocusFirst();
+        }
+
+        private void OnGameMenuItemSelected(int index)
+        {
+            if (index == 0)
+            {
+                SwitchTo(characterView);
+                characterView.Activate();
+            }
+            else
+            {
+                // 背包、裝備、技能先占位，等以後擴充
+                gameMenuView.ShowNotImplemented(index);
+            }
+        }
+
+        private void ReturnToMap()
+        {
+            SwitchTo(mapView);
+            mapView.Activate();
         }
     }
 

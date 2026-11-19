@@ -4,12 +4,13 @@ using System.Drawing;
 using System.IO;
 using System.Text.Json;
 using System.Windows.Forms;
+using NAudio.Wave;
 
 namespace AccessibleGridGame
 {
     /// <summary>
     /// 劇情畫面（UserControl）。不再另開視窗，由 MainMenuForm 無縫切換進出。
-    /// 所有劇情文字都走 ScreenReader.Speak，不使用 UIA Live Region。
+    /// 沒有配音的句子走 ScreenReader.Speak；有配音的句子先讓 NVDA 閉嘴，再用 NAudio 播 wav。
     /// </summary>
     public class StoryView : UserControl
     {
@@ -20,8 +21,16 @@ namespace AccessibleGridGame
         private int currentIndex;
         private string chapterName = "";
         private readonly Label lblDialogue;
+        private readonly Label lblHint;
         private TeleportRequest? pendingTeleport;
         private bool finished;
+
+        // NAudio 播放狀態：等語音講完才接受換句，並用 token 擋掉上一句的遲到事件
+        private IWavePlayer? wavePlayer;
+        private AudioFileReader? audioReader;
+        private bool isPlayingVoice;
+        private bool pendingAdvance;
+        private int voiceToken;
 
         /// <summary>劇情結束時通知主 Form；有傳送指令時一併帶過去。</summary>
         public event Action<TeleportRequest?>? Completed;
@@ -39,14 +48,12 @@ namespace AccessibleGridGame
             lblDialogue.AccessibleName = "劇情對話";
             lblDialogue.AccessibleDescription = "顯示目前劇情句子，按 Enter 換下一句，按 R 重聽";
 
-            Label lblHint = new Label();
-            lblHint.Text = "操作提示：按 Enter 鍵繼續下一句（按 R 鍵重聽本句）";
+            lblHint = new Label();
+            SetHint("操作提示：按 Enter 鍵繼續下一句（按 R 鍵重聽本句）");
             lblHint.Location = new Point(30, 175);
             lblHint.AutoSize = true;
             lblHint.Font = new Font("微軟正黑體", 10);
             lblHint.ForeColor = Color.DimGray;
-            lblHint.AccessibleName = "劇情操作提示";
-            lblHint.AccessibleDescription = "按 Enter 繼續下一句，按 R 重聽本句";
 
             this.Controls.Add(lblDialogue);
             this.Controls.Add(lblHint);
@@ -55,21 +62,168 @@ namespace AccessibleGridGame
         /// <summary>由主 Form 在切換到本畫面後呼叫，開始播放指定章節。</summary>
         public void Play(string targetChapter)
         {
+            StopVoice();
             chapterName = targetChapter;
             currentEntries = new List<StoryEntry>();
             currentIndex = 0;
             pendingTeleport = null;
             finished = false;
+            SetHint("操作提示：按 Enter 鍵繼續下一句（按 R 鍵重聽本句）");
             lblDialogue.Focus();
             LoadAndStartStory();
         }
 
-        /// <summary>更新畫面文字，並透過單一語音通道播報。</summary>
-        private void Say(string text, bool interrupt = true)
+        /// <summary>
+        /// 更新畫面文字。有 voice 就播配音（NVDA 先閉嘴，避免兩張嘴打架）；
+        /// 沒有 voice 或音效檔出問題時，降級回原本的 NVDA 朗讀。
+        /// </summary>
+        private void Say(string text, string? voicePath = null)
         {
             lblDialogue.Text = text;
             lblDialogue.AccessibleName = text;
-            ScreenReader.Speak(text, interrupt);
+
+            if (!string.IsNullOrWhiteSpace(voicePath))
+            {
+                PlayVoice(text, voicePath);
+            }
+            else
+            {
+                StopVoice();
+                ScreenReader.Speak(text);
+            }
+        }
+
+        private void SetHint(string text)
+        {
+            lblHint.Text = text;
+            lblHint.AccessibleName = "劇情操作提示";
+            lblHint.AccessibleDescription = text;
+        }
+
+        /// <summary>停止目前語音並釋放資源，同時讓還在路上的完成事件失效。</summary>
+        private void StopVoice()
+        {
+            voiceToken++;
+            isPlayingVoice = false;
+            pendingAdvance = false;
+
+            try
+            {
+                wavePlayer?.Stop();
+            }
+            catch
+            {
+                // 音效裝置臨時消失也不該讓劇情崩掉。
+            }
+
+            DisposeVoice();
+        }
+
+        private void DisposeVoice()
+        {
+            try
+            {
+                wavePlayer?.Dispose();
+            }
+            catch
+            {
+                // 靜默降級。
+            }
+            finally
+            {
+                wavePlayer = null;
+            }
+
+            try
+            {
+                audioReader?.Dispose();
+            }
+            catch
+            {
+                // 靜默降級。
+            }
+            finally
+            {
+                audioReader = null;
+            }
+        }
+
+        /// <summary>用 NAudio 播放角色配音；檔案不存在或格式不對時自動改回 NVDA 唸字。</summary>
+        private void PlayVoice(string fallbackText, string voicePath)
+        {
+            StopVoice();
+            int token = voiceToken;
+
+            // 玩家選擇「只播配音」：先叫 NVDA 閉嘴，文字仍留在畫面上給低視角玩家看。
+            ScreenReader.Stop();
+
+            string fullPath = Path.IsPathRooted(voicePath)
+                ? voicePath
+                : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, voicePath);
+
+            if (!File.Exists(fullPath))
+            {
+                ScreenReader.Speak(fallbackText);
+                return;
+            }
+
+            try
+            {
+                audioReader = new AudioFileReader(fullPath);
+                wavePlayer = new WaveOut();
+                wavePlayer.Init(audioReader);
+                wavePlayer.PlaybackStopped += (_, _) => OnPlaybackStopped(token);
+                wavePlayer.Play();
+                isPlayingVoice = true;
+                SetHint("配音播放中，播放完畢後按 Enter 繼續。");
+            }
+            catch (Exception)
+            {
+                // 音檔壞了、沒有音效裝置都當成沒配音，劇情照樣能走。
+                DisposeVoice();
+                ScreenReader.Speak(fallbackText);
+            }
+        }
+
+        /// <summary>語音播完（背景執行緒）後，回到 UI 執行緒處理排隊的換句。</summary>
+        private void OnPlaybackStopped(int token)
+        {
+            if (token != voiceToken || IsDisposed || !IsHandleCreated)
+            {
+                return;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => OnVoiceFinishedOnUiThread(token)));
+            }
+            else
+            {
+                OnVoiceFinishedOnUiThread(token);
+            }
+        }
+
+        private void OnVoiceFinishedOnUiThread(int token)
+        {
+            if (token != voiceToken || finished)
+            {
+                return;
+            }
+
+            isPlayingVoice = false;
+            DisposeVoice();
+
+            if (pendingAdvance)
+            {
+                // 玩家在語音播放中按過 Enter：等它講完再自動換句，不漏聽也不卡住。
+                pendingAdvance = false;
+                SetHint("操作提示：按 Enter 鍵繼續下一句（按 R 鍵重聽本句）");
+                Advance();
+            }
+            else
+            {
+                SetHint("配音播放完畢，按 Enter 繼續下一句（按 R 重聽）。");
+            }
         }
 
         private void Complete()
@@ -80,6 +234,7 @@ namespace AccessibleGridGame
             }
 
             finished = true;
+            StopVoice();
             Completed?.Invoke(pendingTeleport);
         }
 
@@ -127,7 +282,7 @@ namespace AccessibleGridGame
                     if (currentEntries.Count > 0)
                     {
                         currentIndex = 0;
-                        Say(currentEntries[0].Text ?? "");
+                        Say(currentEntries[0].Text ?? "", currentEntries[0].Voice);
                     }
                     else if (pendingTeleport != null)
                     {
@@ -154,6 +309,35 @@ namespace AccessibleGridGame
             }
         }
 
+        private void Advance()
+        {
+            currentIndex++;
+
+            if (currentIndex < currentEntries.Count)
+            {
+                Say(currentEntries[currentIndex].Text ?? "", currentEntries[currentIndex].Voice);
+            }
+            else
+            {
+                playedChapters.Add(chapterName);
+                Say("本段劇情結束。");
+                Complete();
+            }
+        }
+
+        private void Replay()
+        {
+            if (currentIndex < currentEntries.Count)
+            {
+                StoryEntry entry = currentEntries[currentIndex];
+                Say(entry.Text ?? "", entry.Voice);
+            }
+            else
+            {
+                Say("已經是最後一句，按 Enter 結束本段劇情。");
+            }
+        }
+
         /// <summary>由唯一的 Form 統一轉送鍵盤事件。</summary>
         public void HandleKey(KeyEventArgs e)
         {
@@ -167,33 +351,39 @@ namespace AccessibleGridGame
                 e.Handled = true;
                 e.SuppressKeyPress = true;
 
-                currentIndex++;
+                if (isPlayingVoice)
+                {
+                    // 語音還在講：先排隊，播完自動換句。玩家按了有反應，才不會以為當機。
+                    pendingAdvance = true;
+                    SetHint("配音播放中，結束後將自動換下一句，請稍候…");
+                    return;
+                }
 
-                if (currentIndex < currentEntries.Count)
-                {
-                    Say(currentEntries[currentIndex].Text ?? "");
-                }
-                else
-                {
-                    playedChapters.Add(chapterName);
-                    Say("本段劇情結束。");
-                    Complete();
-                }
+                Advance();
             }
             else if (e.KeyCode == Keys.R)
             {
                 e.Handled = true;
                 e.SuppressKeyPress = true;
 
-                if (currentIndex < currentEntries.Count)
+                if (isPlayingVoice)
                 {
-                    Say(currentEntries[currentIndex].Text ?? "");
+                    SetHint("配音播放中，播放完畢後可按 R 重聽。");
+                    return;
                 }
-                else
-                {
-                    Say("已經是最後一句，按 Enter 結束本段劇情。");
-                }
+
+                Replay();
             }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                StopVoice();
+            }
+
+            base.Dispose(disposing);
         }
     }
 }
