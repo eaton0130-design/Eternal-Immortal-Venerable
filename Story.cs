@@ -46,10 +46,10 @@ namespace AccessibleGridGame
             lblDialogue.TabIndex = 0;
             lblDialogue.TabStop = true;
             lblDialogue.AccessibleName = "劇情對話";
-            lblDialogue.AccessibleDescription = "顯示目前劇情句子，按 Enter 換下一句，按 R 重聽";
+            lblDialogue.AccessibleDescription = "顯示目前劇情句子，按 Enter 換下一句，按 R 用 NVDA 重聽文字，按 V 重聽配音";
 
             lblHint = new Label();
-            SetHint("操作提示：按 Enter 鍵繼續下一句（按 R 鍵重聽本句）");
+            SetHint("操作提示：Enter 下一句，R 用 NVDA 重聽文字，V 重聽配音");
             lblHint.Location = new Point(30, 175);
             lblHint.AutoSize = true;
             lblHint.Font = new Font("微軟正黑體", 10);
@@ -68,7 +68,7 @@ namespace AccessibleGridGame
             currentIndex = 0;
             pendingTeleport = null;
             finished = false;
-            SetHint("操作提示：按 Enter 鍵繼續下一句（按 R 鍵重聽本句）");
+            SetHint("操作提示：Enter 下一句，R 用 NVDA 重聽文字，V 重聽配音");
             lblDialogue.Focus();
             LoadAndStartStory();
         }
@@ -164,6 +164,7 @@ namespace AccessibleGridGame
             if (!File.Exists(fullPath))
             {
                 ScreenReader.Speak(fallbackText);
+                SetHint("配音檔還沒準備好，已用 NVDA 朗讀文字；按 V 可再試一次。");
                 return;
             }
 
@@ -182,6 +183,7 @@ namespace AccessibleGridGame
                 // 音檔壞了、沒有音效裝置都當成沒配音，劇情照樣能走。
                 DisposeVoice();
                 ScreenReader.Speak(fallbackText);
+                SetHint("配音播放失敗，已用 NVDA 朗讀文字；按 V 可再試一次。");
             }
         }
 
@@ -217,12 +219,12 @@ namespace AccessibleGridGame
             {
                 // 玩家在語音播放中按過 Enter：等它講完再自動換句，不漏聽也不卡住。
                 pendingAdvance = false;
-                SetHint("操作提示：按 Enter 鍵繼續下一句（按 R 鍵重聽本句）");
+                SetHint("操作提示：Enter 下一句，R 用 NVDA 重聽文字，V 重聽配音");
                 Advance();
             }
             else
             {
-                SetHint("配音播放完畢，按 Enter 繼續下一句（按 R 重聽）。");
+                SetHint("配音播放完畢：Enter 下一句，R 用 NVDA 重聽文字，V 重聽配音。");
             }
         }
 
@@ -325,17 +327,46 @@ namespace AccessibleGridGame
             }
         }
 
-        private void Replay()
+        /// <summary>R 鍵：中斷配音，改由 NVDA 把目前句子念一次（沒配音的句子也適用）。</summary>
+        private void ReplayText()
         {
-            if (currentIndex < currentEntries.Count)
+            if (currentIndex >= currentEntries.Count)
             {
-                StoryEntry entry = currentEntries[currentIndex];
-                Say(entry.Text ?? "", entry.Voice);
+                ScreenReader.Speak("已經是最後一句，按 Enter 結束本段劇情。");
+                return;
             }
-            else
+
+            StopVoice();
+            string text = currentEntries[currentIndex].Text ?? "";
+            lblDialogue.Text = text;
+            lblDialogue.AccessibleName = text;
+            ScreenReader.Speak(text);
+            SetHint("已用 NVDA 重聽文字；按 V 重聽配音，按 Enter 繼續下一句。");
+        }
+
+        /// <summary>V 鍵：重播目前句子的配音；沒有配音或檔案失效時自動降級回 NVDA 朗讀。</summary>
+        private void ReplayVoice()
+        {
+            if (currentIndex >= currentEntries.Count)
             {
-                Say("已經是最後一句，按 Enter 結束本段劇情。");
+                ScreenReader.Speak("已經是最後一句，按 Enter 結束本段劇情。");
+                return;
             }
+
+            StoryEntry entry = currentEntries[currentIndex];
+            string text = entry.Text ?? "";
+            lblDialogue.Text = text;
+            lblDialogue.AccessibleName = text;
+
+            if (string.IsNullOrWhiteSpace(entry.Voice))
+            {
+                StopVoice();
+                ScreenReader.Speak(text);
+                SetHint("這句還沒有配音，已用 NVDA 朗讀文字；按 R 可再聽一次。");
+                return;
+            }
+
+            PlayVoice(text, entry.Voice);
         }
 
         /// <summary>由唯一的 Form 統一轉送鍵盤事件。</summary>
@@ -368,11 +399,27 @@ namespace AccessibleGridGame
 
                 if (isPlayingVoice)
                 {
-                    SetHint("配音播放中，播放完畢後可按 R 重聽。");
+                    // 配音還沒講完，不讓玩家插隊中斷；用 NVDA 回一句吐槽，按幾次就嗆幾次。
+                    SetHint("系統提示：播放配音呢，你吵什麼吵，等配音播完再按。");
+                    ScreenReader.Speak("系統提示：播放配音呢，你吵什麼吵，等配音播完再按。");
                     return;
                 }
 
-                Replay();
+                ReplayText();
+            }
+            else if (e.KeyCode == Keys.V)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+
+                if (isPlayingVoice)
+                {
+                    SetHint("系統提示：播放配音呢，你要叫它重播你等它播完。");
+                    ScreenReader.Speak("系統提示：播放配音呢，你要叫它重播你等它播完。");
+                    return;
+                }
+
+                ReplayVoice();
             }
         }
 
