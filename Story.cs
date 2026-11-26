@@ -414,8 +414,8 @@ namespace AccessibleGridGame
 
                 if (isPlayingVoice)
                 {
-                    SetHint("系統提示：播放配音呢，你要叫它重播你等它播完。");
-                    ScreenReader.Speak("系統提示：播放配音呢，你要叫它重播你等它播完。");
+                    SetHint("系統提示：播放配音呢，你要叫它重播你等它播完在按。");
+                    ScreenReader.Speak("系統提示：播放配音呢，你要叫它重播你等它播完在按。");
                     return;
                 }
 
