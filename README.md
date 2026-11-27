@@ -34,9 +34,9 @@
 
 ### 方法一：使用 Setup.exe（推薦）
 
-> 下載位置**即將開放**，敬請期待。
+> 下載：[Setup.exe](https://github.com/eaton0130-design/Eternal-Immortal-Venerable/releases/download/v0.1.0/Setup.exe)（0.1.0 測試版）。全部 Release 請看[這裡](https://github.com/eaton0130-design/Eternal-Immortal-Venerable/releases)。
 
-開放之後的用法：
+用法：
 
 1. 執行 **Setup.exe**，畫面會朗讀「安裝」與「更新」兩個選項。
 2. 用 **↑ / ↓** 選「**安裝**」，按 **Enter**。
@@ -51,7 +51,7 @@ Setup 本身也是全鍵盤操作：**↑ / ↓** 切換、**Enter** 執行、**
 
 ### 方法二：自己下載 zip
 
-> 下載頁面**即將開放**，敬請期待。
+> 下載：[Eternal-Immortal-Venerable-0.1.0.zip](https://github.com/eaton0130-design/Eternal-Immortal-Venerable/releases/download/v0.1.0/Eternal-Immortal-Venerable-0.1.0.zip)（0.1.0 測試版）。全部 Release 請看[這裡](https://github.com/eaton0130-design/Eternal-Immortal-Venerable/releases)。
 
 1. 下載並解壓 zip 到任意資料夾。
 2. 執行資料夾裡的 **萬古仙尊.exe** 就開始玩。
